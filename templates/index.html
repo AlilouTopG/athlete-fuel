@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Athlete Fuel AI</title>
+<meta name="theme-color" content="#0F172A">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: { ink: '#0F172A', crimson: '#FF3366', cyber: '#00F2FE' },
+        fontFamily: {
+          sans: ['"IBM Plex Sans Arabic"', 'system-ui', 'sans-serif'],
+          display: ['"Barlow Condensed"', '"IBM Plex Sans Arabic"', 'sans-serif']
+        }
+      }
+    }
+  };
+</script>
+<!-- Markdown rendering + sanitising (loaded lazily, used only when a plan arrives) -->
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+
+<style>
+  :root {
+    --ink: #0F172A;
+    --crimson: #FF3366;
+    --cyan: #00F2FE;
+    --text: #E2E8F0;
+    --muted: #94A3B8;
+    --line: rgba(148, 163, 184, .18);
+  }
+  html { background: var(--ink); color-scheme: dark; }
+  body {
+    font-family: 'IBM Plex Sans Arabic', system-ui, sans-serif;
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Soft colour behind the glass so the blur has something to refract */
+  body::before {
+    content: "";
+    position: fixed; inset: 0; z-index: -1;
+    background:
+      radial-gradient(60rem 40rem at 92% -8%, rgba(255, 51, 102, .16), transparent 60%),
+      radial-gradient(50rem 36rem at 4% 108%, rgba(0, 242, 254, .12), transparent 60%),
+      var(--ink);
+  }
+  .num { font-variant-numeric: tabular-nums; unicode-bidi: isolate; }
+
+  /* ---------- Glass cards with border glow ---------- */
+  .glass {
+    background: linear-gradient(180deg, rgba(30, 41, 59, .62), rgba(15, 23, 42, .62));
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    backdrop-filter: blur(16px) saturate(140%);
+    border: 1px solid var(--line);
+    border-radius: 1rem;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, .04) inset, 0 24px 40px -28px rgba(0, 0, 0, .7);
+    transition: border-color .25s ease, box-shadow .25s ease;
+  }
+  .glow-cyan:hover, .glow-cyan:focus-within {
+    border-color: rgba(0, 242, 254, .45);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, .04) inset, 0 0 0 1px rgba(0, 242, 254, .14), 0 0 34px -10px rgba(0, 242, 254, .45);
+  }
+  .glow-crimson {
+    border-color: rgba(255, 51, 102, .38);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, .04) inset, 0 0 0 1px rgba(255, 51, 102, .1), 0 0 44px -14px rgba(255, 51, 102, .5);
+  }
+  .glow-crimson:hover { border-color: rgba(255, 51, 102, .6); }
+
+  /* ---------- Form controls ---------- */
+  .lbl { display: block; font-size: .78rem; font-weight: 500; color: var(--muted); }
+  .field {
+    width: 100%;
+    background: rgba(15, 23, 42, .7);
+    border: 1px solid rgba(148, 163, 184, .24);
+    border-radius: .6rem;
+    padding: .6rem .75rem;
+    color: var(--text);
+    transition: border-color .2s ease, box-shadow .2s ease;
+  }
+  .field::placeholder { color: rgba(148, 163, 184, .6); }
+  .field:focus { outline: none; border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(0, 242, 254, .18); }
+  .field[aria-invalid="true"] { border-color: var(--crimson); box-shadow: 0 0 0 3px rgba(255, 51, 102, .16); }
+  input[type=number].field { text-align: center; }
+  select.field {
+    appearance: none; -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none' stroke='%2394A3B8' stroke-width='2'%3E%3Cpath d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right .8rem center;
+    padding-inline-end: 2.25rem;
+  }
+  [dir="rtl"] select.field { background-position: left .8rem center; }
+  select.field option { background: #0F172A; color: var(--text); }
+
+  .choice { position: relative; display: block; cursor: pointer; }
+  .choice input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .choice .box {
+    display: block; padding: .6rem .8rem; border-radius: .6rem;
+    border: 1px solid rgba(148, 163, 184, .24);
+    background: rgba(15, 23, 42, .55);
+    transition: border-color .2s ease, background .2s ease, box-shadow .2s ease;
+  }
+  .choice:hover .box { border-color: rgba(148, 163, 184, .5); }
+  .choice input:checked + .box {
+    border-color: var(--cyan); background: rgba(0, 242, 254, .08);
+    box-shadow: 0 0 0 1px rgba(0, 242, 254, .25), 0 0 22px -8px rgba(0, 242, 254, .55);
+  }
+  .choice.crimson input:checked + .box {
+    border-color: var(--crimson); background: rgba(255, 51, 102, .09);
+    box-shadow: 0 0 0 1px rgba(255, 51, 102, .28), 0 0 22px -8px rgba(255, 51, 102, .6);
+  }
+  .choice input:focus-visible + .box { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+  /* ---------- Language switch ---------- */
+  .lang {
+    display: inline-flex; padding: .2rem; border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, .24); background: rgba(15, 23, 42, .6);
+  }
+  .lang button {
+    padding: .35rem 1rem; border-radius: 999px; font-size: .85rem; font-weight: 600;
+    color: var(--muted); transition: background .2s ease, color .2s ease, box-shadow .2s ease;
+  }
+  .lang button:hover { color: var(--text); }
+  .lang button[aria-pressed="true"] { color: var(--ink); background: var(--cyan); box-shadow: 0 0 18px -2px rgba(0, 242, 254, .6); }
+  .lang button:focus-visible, .btn-ghost:focus-visible, .cta:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+  /* ---------- Macro split bar (the one showpiece) ---------- */
+  .macro-bar { display: flex; gap: 3px; height: .65rem; border-radius: 999px; overflow: hidden; background: rgba(148, 163, 184, .14); }
+  .macro-bar span { display: block; height: 100%; width: 0; transition: width .4s cubic-bezier(.2, .8, .2, 1); }
+  #bar-p { background: var(--cyan); box-shadow: 0 0 14px rgba(0, 242, 254, .65); }
+  #bar-c { background: #CBD5E1; }
+  #bar-f { background: var(--crimson); box-shadow: 0 0 14px rgba(255, 51, 102, .65); }
+  .dot { width: .6rem; height: .6rem; border-radius: 50%; display: inline-block; flex: none; }
+
+  /* ---------- Submit button + spinner ---------- */
+  .cta {
+    position: relative; display: flex; align-items: center; justify-content: center; gap: .7rem;
+    width: 100%; height: 3.4rem; border-radius: .8rem;
+    font-weight: 700; font-size: 1.02rem; color: var(--ink);
+    background: linear-gradient(135deg, #FF3366, #FF5C85);
+    box-shadow: 0 0 0 1px rgba(255, 51, 102, .5), 0 10px 34px -10px rgba(255, 51, 102, .75);
+    transition: box-shadow .25s ease, transform .1s ease, filter .25s ease, opacity .25s ease;
+  }
+  .cta:hover:not(:disabled) { box-shadow: 0 0 0 1px rgba(0, 242, 254, .7), 0 0 34px -6px rgba(0, 242, 254, .55), 0 10px 34px -10px rgba(255, 51, 102, .75); }
+  .cta:active:not(:disabled) { transform: translateY(1px); }
+  .cta:disabled { opacity: .55; cursor: not-allowed; }
+  .spinner {
+    display: inline-block; width: 1.2rem; height: 1.2rem; border-radius: 50%;
+    background: conic-gradient(from 0deg, transparent 0 20%, var(--cyan) 62%, var(--ink));
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+    animation: spin .8s linear infinite;
+  }
+  .spinner[hidden] { display: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .btn-ghost {
+    border: 1px solid rgba(148, 163, 184, .28); border-radius: .6rem; padding: .35rem .8rem;
+    font-size: .82rem; font-weight: 500; color: var(--text);
+    transition: border-color .2s ease, box-shadow .2s ease;
+  }
+  .btn-ghost:hover { border-color: rgba(0, 242, 254, .6); box-shadow: 0 0 16px -4px rgba(0, 242, 254, .5); }
+
+  /* ---------- Markdown output ---------- */
+  .md { line-height: 1.8; font-size: .97rem; }
+  .md > *:first-child { margin-top: 0; }
+  .md h1, .md h2, .md h3 { font-family: 'Barlow Condensed', 'IBM Plex Sans Arabic', sans-serif; font-weight: 700; color: #fff; line-height: 1.2; margin: 1.7em 0 .55em; }
+  .md h1 { font-size: 1.8rem; }
+  .md h2 { font-size: 1.5rem; padding-bottom: .4rem; border-bottom: 1px solid var(--line); }
+  .md h3 { font-size: 1.2rem; color: var(--cyan); }
+  .md p { margin: .65em 0; }
+  .md ul, .md ol { margin: .65em 0; padding-inline-start: 1.5rem; }
+  .md ul { list-style: disc; }
+  .md ol { list-style: decimal; }
+  .md li { margin: .3em 0; }
+  .md li::marker { color: var(--crimson); }
+  .md strong { color: #fff; font-weight: 600; }
+  .md em { color: #CBD5E1; }
+  .md a { color: var(--cyan); text-decoration: underline; text-underline-offset: 3px; }
+  .md hr { border: 0; border-top: 1px solid var(--line); margin: 1.5rem 0; }
+  .md code { background: rgba(148, 163, 184, .15); padding: .1rem .4rem; border-radius: .35rem; font-size: .88em; direction: ltr; unicode-bidi: isolate; }
+  .md blockquote {
+    margin: 1rem 0; padding: .4rem 1rem; background: rgba(255, 51, 102, .07);
+    border-inline-start: 3px solid var(--crimson);
+    border-start-end-radius: .5rem; border-end-end-radius: .5rem;
+  }
+  .md table { width: 100%; min-width: 34rem; border-collapse: collapse; font-size: .9rem; }
+  .md th, .md td { padding: .55rem .75rem; text-align: start; border-bottom: 1px solid var(--line); }
+  .md th { color: var(--cyan); font-weight: 600; background: rgba(0, 242, 254, .06); white-space: nowrap; }
+  .md tr:last-child td { font-weight: 600; color: #fff; }
+  .md.streaming > :last-child::after {
+    content: ""; display: inline-block; width: .5rem; height: 1em; margin-inline-start: .25rem;
+    background: var(--cyan); vertical-align: -.15em; animation: blink 1s steps(2) infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .spinner { animation-duration: 1.8s; }
+    .md.streaming > :last-child::after { animation: none; }
+    .macro-bar span, .glass, .field, .choice .box, .cta { transition: none; }
+  }
+</style>
+</head>
+
+<body class="min-h-screen font-sans">
+
+<header class="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 pt-5 pb-1 sm:px-6">
+  <div class="flex items-center gap-3">
+    <svg width="42" height="42" viewBox="0 0 42 42" fill="none" aria-hidden="true">
+      <path d="M21 2.5 37 11.75v18.5L21 39.5 5 30.25v-18.5L21 2.5Z" stroke="#00F2FE" stroke-width="1.6" fill="rgba(0,242,254,.07)"/>
+      <path d="M23.5 9 13 23h7l-1.5 10L29 19h-7l1.5-10Z" fill="#FF3366"/>
+    </svg>
+    <div>
+      <h1 class="font-display text-3xl font-bold leading-none text-white" data-i18n="appName"></h1>
+      <p class="mt-1 text-sm text-slate-400" data-i18n="tagline"></p>
+    </div>
+  </div>
+  <div class="lang" role="group" data-i18n-aria="langLabel">
+    <button type="button" data-lang="en" lang="en" aria-pressed="true">EN</button>
+    <button type="button" data-lang="ar" lang="ar" aria-pressed="false">AR</button>
+  </div>
+</header>
+
+<form id="app-form" novalidate
+      class="mx-auto grid max-w-7xl items-start gap-5 px-4 py-5 sm:px-6 lg:grid-cols-[22rem_minmax(0,1fr)] xl:grid-cols-[24rem_minmax(0,1fr)]">
+
+  <!-- ===================== Athlete profile ===================== -->
+  <aside class="glass glow-cyan space-y-6 p-5 sm:p-6 lg:sticky lg:top-4" aria-labelledby="profile-title">
+    <h2 id="profile-title" class="font-display text-2xl font-semibold text-white" data-i18n="profileTitle"></h2>
+
+    <fieldset>
+      <legend class="lbl" data-i18n="sex"></legend>
+      <div class="mt-2 grid grid-cols-2 gap-2">
+        <label class="choice"><input type="radio" name="sex" value="male" checked><span class="box text-center" data-i18n="male"></span></label>
+        <label class="choice"><input type="radio" name="sex" value="female"><span class="box text-center" data-i18n="female"></span></label>
+      </div>
+    </fieldset>
+
+    <div class="grid grid-cols-3 gap-3">
+      <div>
+        <label class="lbl" for="age" data-i18n="age"></label>
+        <input id="age" class="field mt-2" type="number" inputmode="numeric" min="16" max="80" step="1" value="24">
+      </div>
+      <div>
+        <label class="lbl" for="height" data-i18n="height"></label>
+        <input id="height" class="field mt-2" type="number" inputmode="decimal" min="120" max="230" step="1" value="178">
+      </div>
+      <div>
+        <label class="lbl" for="weight" data-i18n="weight"></label>
+        <input id="weight" class="field mt-2" type="number" inputmode="decimal" min="30" max="250" step="0.5" value="78">
+      </div>
+    </div>
+
+    <div>
+      <label class="lbl" for="activity" data-i18n="activity"></label>
+      <select id="activity" class="field mt-2">
+        <option value="sedentary" data-i18n="actSedentary"></option>
+        <option value="light" data-i18n="actLight"></option>
+        <option value="moderate" data-i18n="actModerate" selected></option>
+        <option value="active" data-i18n="actActive"></option>
+        <option value="athlete" data-i18n="actAthlete"></option>
+      </select>
+    </div>
+
+    <fieldset>
+      <legend class="lbl" data-i18n="goal"></legend>
+      <div class="mt-2 space-y-2">
+        <label class="choice crimson">
+          <input type="radio" name="goal" value="cut">
+          <span class="box"><span class="block font-semibold text-white" data-i18n="goalCut"></span><span class="mt-0.5 block text-xs text-slate-400" data-i18n="goalCutSub"></span></span>
+        </label>
+        <label class="choice crimson">
+          <input type="radio" name="goal" value="maintain" checked>
+          <span class="box"><span class="block font-semibold text-white" data-i18n="goalMaintain"></span><span class="mt-0.5 block text-xs text-slate-400" data-i18n="goalMaintainSub"></span></span>
+        </label>
+        <label class="choice crimson">
+          <input type="radio" name="goal" value="bulk">
+          <span class="box"><span class="block font-semibold text-white" data-i18n="goalBulk"></span><span class="mt-0.5 block text-xs text-slate-400" data-i18n="goalBulkSub"></span></span>
+        </label>
+      </div>
+    </fieldset>
+
+    <div>
+      <label class="lbl" for="session" data-i18n="session"></label>
+      <select id="session" class="field mt-2">
+        <option value="resistance" data-i18n="sesResistance" selected></option>
+        <option value="cardio" data-i18n="sesCardio"></option>
+        <option value="hiit" data-i18n="sesHiit"></option>
+        <option value="endurance" data-i18n="sesEndurance"></option>
+        <option value="rest" data-i18n="sesRest"></option>
+      </select>
+    </div>
+  </aside>
+
+  <!-- ===================== Main column ===================== -->
+  <div class="min-w-0 space-y-5">
+
+    <!-- Live targets -->
+    <section aria-labelledby="targets-title">
+      <h2 id="targets-title" class="sr-only" data-i18n="targetsTitle"></h2>
+      <div class="grid grid-cols-3 gap-3">
+
+        <article class="glass glow-crimson col-span-3 p-5 sm:p-6">
+          <div class="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
+            <div>
+              <p class="lbl" data-i18n="calories"></p>
+              <p class="mt-1 flex items-baseline gap-2">
+                <span id="v-cal" class="num font-display text-6xl font-bold leading-none text-white sm:text-7xl">—</span>
+                <span class="text-slate-400" data-i18n="kcal"></span>
+              </p>
+            </div>
+            <dl class="flex gap-7">
+              <div>
+                <dt class="text-xs text-slate-400" data-i18n="bmr"></dt>
+                <dd id="v-bmr" class="num font-display text-2xl font-semibold text-slate-200">—</dd>
+              </div>
+              <div>
+                <dt class="text-xs text-slate-400" data-i18n="tdee"></dt>
+                <dd id="v-tdee" class="num font-display text-2xl font-semibold text-slate-200">—</dd>
+              </div>
+            </dl>
+          </div>
+          <div class="macro-bar mt-5" aria-hidden="true"><span id="bar-p"></span><span id="bar-c"></span><span id="bar-f"></span></div>
+          <p class="mt-3 text-xs text-slate-400" data-i18n="formulaNote"></p>
+        </article>
+
+        <article class="glass glow-cyan p-4 sm:p-5">
+          <p class="lbl flex items-center gap-2"><span class="dot" style="background:var(--cyan)"></span><span data-i18n="protein"></span></p>
+          <p class="mt-2 flex items-baseline gap-1">
+            <span id="v-pro" class="num font-display text-4xl font-bold text-white sm:text-5xl">—</span>
+            <span class="text-sm text-slate-400" data-i18n="g"></span>
+          </p>
+          <p class="mt-2 flex justify-between gap-2 text-xs text-slate-400"><span id="kg-pro" class="num"></span><span id="pct-pro" class="num"></span></p>
+        </article>
+
+        <article class="glass glow-cyan p-4 sm:p-5">
+          <p class="lbl flex items-center gap-2"><span class="dot" style="background:#CBD5E1"></span><span data-i18n="carbs"></span></p>
+          <p class="mt-2 flex items-baseline gap-1">
+            <span id="v-carb" class="num font-display text-4xl font-bold text-white sm:text-5xl">—</span>
+            <span class="text-sm text-slate-400" data-i18n="g"></span>
+          </p>
+          <p class="mt-2 flex justify-between gap-2 text-xs text-slate-400"><span id="kg-carb" class="num"></span><span id="pct-carb" class="num"></span></p>
+        </article>
+
+        <article class="glass glow-cyan p-4 sm:p-5">
+          <p class="lbl flex items-center gap-2"><span class="dot" style="background:var(--crimson)"></span><span data-i18n="fats"></span></p>
+          <p class="mt-2 flex items-baseline gap-1">
+            <span id="v-fat" class="num font-display text-4xl font-bold text-white sm:text-5xl">—</span>
+            <span class="text-sm text-slate-400" data-i18n="g"></span>
+          </p>
+          <p class="mt-2 flex justify-between gap-2 text-xs text-slate-400"><span id="kg-fat" class="num"></span><span id="pct-fat" class="num"></span></p>
+        </article>
+      </div>
+    </section>
+
+    <!-- Ingredients + submit -->
+    <section class="glass glow-cyan space-y-4 p-5 sm:p-6" aria-labelledby="ing-title">
+      <label id="ing-title" for="ingredients" class="block font-display text-2xl font-semibold text-white" data-i18n="ingredientsTitle"></label>
+      <textarea id="ingredients" class="field" rows="4" maxlength="1500" data-i18n-placeholder="ingredientsPlaceholder" aria-describedby="ing-hint"></textarea>
+      <p id="ing-hint" class="text-xs text-slate-400" data-i18n="ingredientsHint"></p>
+
+      <p id="invalid" class="rounded-lg border border-[#FF3366]/40 bg-[#FF3366]/10 px-3 py-2 text-sm text-slate-100" role="status" hidden data-i18n="invalid"></p>
+
+      <button id="submit" type="submit" class="cta" aria-busy="false">
+        <span id="spinner" class="spinner" hidden aria-hidden="true"></span>
+        <span id="submit-label" data-i18n="generate"></span>
+      </button>
+      <p id="sr-status" class="sr-only" aria-live="polite"></p>
+    </section>
+
+    <!-- AI output -->
+    <section id="output-card" class="glass glow-cyan p-5 sm:p-6" aria-labelledby="out-title">
+      <div class="mb-4 flex items-center justify-between gap-3">
+        <h2 id="out-title" class="font-display text-2xl font-semibold text-white" data-i18n="outputTitle"></h2>
+        <button id="copy" type="button" class="btn-ghost" hidden data-i18n="copy"></button>
+      </div>
+
+      <div id="empty" class="rounded-xl border border-dashed border-slate-600/60 px-5 py-9 text-center">
+        <p class="font-display text-xl font-semibold text-slate-200" data-i18n="emptyTitle"></p>
+        <p class="mx-auto mt-2 max-w-md text-sm text-slate-400" data-i18n="emptyBody"></p>
+      </div>
+
+      <div id="error" class="rounded-xl border border-[#FF3366]/50 bg-[#FF3366]/10 px-4 py-3 text-sm text-slate-100" role="alert" hidden></div>
+      <article id="md" class="md" hidden></article>
+    </section>
+  </div>
+</form>
+
+<footer class="mx-auto max-w-7xl px-4 pb-10 text-xs text-slate-500 sm:px-6" data-i18n="disclaimer"></footer>
+
+<script>
+(() => {
+  'use strict';
+
+  /* ===================== i18n ===================== */
+  const I18N = {
+    en: {
+      pageTitle: 'Athlete Fuel AI',
+      appName: 'Athlete Fuel AI',
+      tagline: 'Nutrition targets and meals built around your training',
+      langLabel: 'Language',
+      profileTitle: 'Athlete profile',
+      sex: 'Sex', male: 'Male', female: 'Female',
+      age: 'Age (years)', height: 'Height (cm)', weight: 'Weight (kg)',
+      activity: 'Weekly activity level',
+      actSedentary: 'Sedentary (little or no training)',
+      actLight: 'Light (1-3 sessions a week)',
+      actModerate: 'Moderate (3-5 sessions a week)',
+      actActive: 'High (6-7 sessions a week)',
+      actAthlete: 'Very high (twice daily or physical job)',
+      goal: 'Goal',
+      goalCut: 'Cutting', goalCutSub: 'Lose fat while keeping muscle',
+      goalMaintain: 'Maintain', goalMaintainSub: 'Hold weight and performance',
+      goalBulk: 'Bulking', goalBulkSub: 'Gain muscle mass',
+      session: "Today's training session",
+      sesResistance: 'Resistance training', sesCardio: 'Cardio', sesHiit: 'HIIT (high-intensity intervals)',
+      sesEndurance: 'Endurance training', sesRest: 'Rest day',
+      targetsTitle: 'Daily calories and macros',
+      calories: 'Target calories', kcal: 'kcal',
+      bmr: 'BMR', tdee: 'TDEE',
+      protein: 'Protein', carbs: 'Carbs', fats: 'Fats', g: 'g', perKg: 'g/kg',
+      formulaNote: 'Estimated with the Mifflin-St Jeor equation multiplied by your activity factor.',
+      ingredientsTitle: "What's in your kitchen",
+      ingredientsPlaceholder: 'e.g. chicken breast, rice, eggs, oats, spinach, olive oil',
+      ingredientsHint: 'Separate items with commas. Leave it blank and the agent will suggest a shopping list.',
+      invalid: 'Enter a valid age (16-80), height (120-230 cm) and weight (30-250 kg) to continue.',
+      generate: 'Generate meal plan', generating: 'Building your plan…', searching: 'Searching the web…', writing: 'Writing your plan…',
+      outputTitle: 'Your meal plan', copy: 'Copy', copied: 'Copied',
+      emptyTitle: 'No plan yet',
+      emptyBody: "Fill in your profile and ingredients, then generate a plan matched to today's session.",
+      disclaimer: 'General guidance only, not medical advice. See a registered dietitian if you have a medical condition.',
+      errRate: 'Too many requests. Wait a minute and try again.',
+      errConfig: "The AI service isn't configured on the server. Add the API keys and redeploy.",
+      errUpstream: "The agent couldn't finish this plan. Try again in a moment.",
+      errQuota: 'The AI service is busy or over its quota. Try again shortly.',
+      errNetwork: 'Connection lost. Check your network and try again.',
+      errValidation: 'Some profile values were rejected. Check them and try again.'
+    },
+    ar: {
+      pageTitle: 'وقود الرياضي بالذكاء الاصطناعي',
+      appName: 'وقود الرياضي',
+      tagline: 'أهداف تغذية ووجبات مصمَّمة حول تمرينك',
+      langLabel: 'اللغة',
+      profileTitle: 'الملف الرياضي',
+      sex: 'الجنس', male: 'ذكر', female: 'أنثى',
+      age: 'العمر (سنة)', height: 'الطول (سم)', weight: 'الوزن (كغ)',
+      activity: 'مستوى النشاط الأسبوعي',
+      actSedentary: 'خامل (تمارين قليلة أو معدومة)',
+      actLight: 'خفيف (1-3 حصص أسبوعيًا)',
+      actModerate: 'متوسط (3-5 حصص أسبوعيًا)',
+      actActive: 'مرتفع (6-7 حصص أسبوعيًا)',
+      actAthlete: 'مرتفع جدًا (حصتان يوميًا أو عمل بدني)',
+      goal: 'الهدف',
+      goalCut: 'تنشيف', goalCutSub: 'خسارة الدهون مع الحفاظ على الكتلة العضلية',
+      goalMaintain: 'تثبيت الوزن', goalMaintainSub: 'الحفاظ على الوزن والأداء',
+      goalBulk: 'تضخيم', goalBulkSub: 'زيادة الكتلة العضلية',
+      session: 'حصة اليوم التدريبية',
+      sesResistance: 'تمرين المقاومة', sesCardio: 'تمرين الكارديو (هوائي)', sesHiit: 'تمرين HIIT (تدريب متقطع عالي الشدة)',
+      sesEndurance: 'تمرين التحمّل', sesRest: 'يوم راحة',
+      targetsTitle: 'السعرات والماكروز اليومية',
+      calories: 'السعرات الحرارية المستهدفة', kcal: 'سعرة',
+      bmr: 'الأيض الأساسي (BMR)', tdee: 'الإنفاق اليومي (TDEE)',
+      protein: 'البروتين', carbs: 'الكربوهيدرات', fats: 'الدهون', g: 'غ', perKg: 'غ/كغ',
+      formulaNote: 'التقدير وفق معادلة ميفلين-سانت جيور مضروبة في معامل النشاط.',
+      ingredientsTitle: 'المكوّنات المتوفرة لديك',
+      ingredientsPlaceholder: 'مثال: صدر دجاج، أرز، بيض، شوفان، سبانخ، زيت زيتون',
+      ingredientsHint: 'افصل بين المكوّنات بفاصلة. إن تركته فارغًا فسيقترح الوكيل قائمة مشتريات.',
+      invalid: 'أدخل قيمًا صحيحة للمتابعة: العمر (16-80)، والطول (120-230 سم)، والوزن (30-250 كغ).',
+      generate: 'أنشئ خطة الوجبات', generating: 'جارٍ إعداد خطتك…', searching: 'جارٍ البحث في الويب…', writing: 'جارٍ كتابة الخطة…',
+      outputTitle: 'خطة وجباتك', copy: 'نسخ', copied: 'تم النسخ',
+      emptyTitle: 'لا توجد خطة بعد',
+      emptyBody: 'أدخل ملفك الرياضي والمكوّنات، ثم أنشئ خطة تناسب حصة اليوم.',
+      disclaimer: 'إرشادات عامة وليست نصيحة طبية. استشر أخصائي تغذية عند وجود حالة صحية.',
+      errRate: 'طلبات كثيرة جدًا. انتظر دقيقة ثم حاول مجددًا.',
+      errConfig: 'خدمة الذكاء الاصطناعي غير مهيأة على الخادم. أضف مفاتيح API ثم أعد النشر.',
+      errUpstream: 'تعذّر على الوكيل إكمال الخطة. حاول مرة أخرى بعد قليل.',
+      errQuota: 'الخدمة مشغولة أو تجاوزت حصتها. حاول مجددًا بعد قليل.',
+      errNetwork: 'انقطع الاتصال. تحقق من الشبكة وحاول مجددًا.',
+      errValidation: 'رُفضت بعض قيم الملف الرياضي. راجعها وحاول مجددًا.'
+    }
+  };
+
+  const $  = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+  const state = { lang: 'en', phase: 'idle', errorKey: null, raw: '', outputLang: 'en', profile: null };
+  const t = key => I18N[state.lang][key] ?? key;
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ===================== Nutrition maths (mirrors compute_targets in main.py) ===================== */
+  const ACTIVITY = { sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725, athlete: 1.9 };
+  // [calorie adjustment vs TDEE, protein g/kg, fat g/kg]
+  const GOAL = { cut: [-0.20, 2.2, 0.8], maintain: [0, 1.8, 1.0], bulk: [0.10, 2.0, 1.0] };
+  const round = x => Math.floor(x + 0.5);
+
+  function compute(p) {
+    const bmr  = 10 * p.weight + 6.25 * p.height - 5 * p.age + (p.sex === 'male' ? 5 : -161);
+    const tdee = bmr * ACTIVITY[p.activity];
+    const [adj, proKg, fatKg] = GOAL[p.goal];
+    const calories = round(Math.max(tdee * (1 + adj), bmr));
+    const protein  = round(proKg * p.weight);
+    const fats     = round(fatKg * p.weight);
+    const carbs    = Math.max(0, round((calories - protein * 4 - fats * 9) / 4));
+    return { bmr: round(bmr), tdee: round(tdee), calories, protein, carbs, fats };
+  }
+
+  const RANGES = { age: [16, 80], height: [120, 230], weight: [30, 250] };
+
+  function readProfile() {
+    const p = {
+      sex: $('input[name="sex"]:checked').value,
+      goal: $('input[name="goal"]:checked').value,
+      activity: $('#activity').value,
+      session: $('#session').value
+    };
+    let ok = true;
+    for (const key of Object.keys(RANGES)) {
+      const el = $('#' + key);
+      const v = parseFloat(el.value);
+      const [min, max] = RANGES[key];
+      const valid = Number.isFinite(v) && v >= min && v <= max && (key !== 'age' || Number.isInteger(v));
+      el.setAttribute('aria-invalid', String(!valid && el.value !== ''));
+      p[key] = v;
+      ok = ok && valid;
+    }
+    return ok ? p : null;
+  }
+
+  /* ===================== Live metrics ===================== */
+  function setNum(el, value) {
+    cancelAnimationFrame(el._raf);
+    if (value == null) { el.textContent = '—'; el._v = null; return; }
+    const fmt = v => Math.round(v).toLocaleString('en-US');
+    const from = el._v ?? value;
+    el._v = value;
+    if (reduceMotion || from === value) { el.textContent = fmt(value); return; }
+    const t0 = performance.now(), dur = 280;
+    const step = now => {
+      const k = Math.min(1, (now - t0) / dur);
+      el.textContent = fmt(from + (value - from) * (1 - Math.pow(1 - k, 3)));
+      if (k < 1) el._raf = requestAnimationFrame(step);
+    };
+    el._raf = requestAnimationFrame(step);
+  }
+
+  function renderTargets() {
+    const p = readProfile();
+    state.profile = p;
+    $('#invalid').hidden = !!p;
+
+    const ids = { cal: 'calories', bmr: 'bmr', tdee: 'tdee', pro: 'protein', carb: 'carbs', fat: 'fats' };
+    if (!p) {
+      for (const id of Object.keys(ids)) setNum($('#v-' + id), null);
+      for (const id of ['pro', 'carb', 'fat']) { $('#kg-' + id).textContent = ''; $('#pct-' + id).textContent = ''; }
+      for (const id of ['bar-p', 'bar-c', 'bar-f']) $('#' + id).style.width = '0%';
+      updateButton();
+      return;
+    }
+
+    const c = compute(p);
+    for (const [id, key] of Object.entries(ids)) setNum($('#v-' + id), c[key]);
+
+    const kcal = { pro: c.protein * 4, carb: c.carbs * 4, fat: c.fats * 9 };
+    const total = kcal.pro + kcal.carb + kcal.fat || 1;
+    const pctPro = round(kcal.pro / total * 100);
+    const pctFat = round(kcal.fat / total * 100);
+    const pct = { pro: pctPro, fat: pctFat, carb: Math.max(0, 100 - pctPro - pctFat) };
+    const grams = { pro: c.protein, carb: c.carbs, fat: c.fats };
+
+    for (const id of ['pro', 'carb', 'fat']) {
+      $('#kg-' + id).textContent = `${(grams[id] / p.weight).toFixed(1)} ${t('perKg')}`;
+      $('#pct-' + id).textContent = `${pct[id]}%`;
+    }
+    $('#bar-p').style.width = (kcal.pro / total * 100) + '%';
+    $('#bar-c').style.width = (kcal.carb / total * 100) + '%';
+    $('#bar-f').style.width = (kcal.fat / total * 100) + '%';
+    updateButton();
+  }
+
+  /* ===================== Language ===================== */
+  function applyLang(lang) {
+    state.lang = lang;
+    const dict = I18N[lang];
+    const html = document.documentElement;
+    html.lang = lang;
+    html.dir = lang === 'ar' ? 'rtl' : 'ltr';
+    document.title = dict.pageTitle;
+
+    $$('[data-i18n]').forEach(el => { el.textContent = dict[el.dataset.i18n]; });
+    $$('[data-i18n-placeholder]').forEach(el => { el.placeholder = dict[el.dataset.i18nPlaceholder]; });
+    $$('[data-i18n-aria]').forEach(el => el.setAttribute('aria-label', dict[el.dataset.i18nAria]));
+    $$('[data-lang]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.lang === lang)));
+
+    renderTargets();
+    updateButton();
+    renderError();
+    try { localStorage.setItem('lang', lang); } catch (_) { /* storage unavailable */ }
+  }
+
+  /* ===================== Submit button ===================== */
+  const PHASE_KEY = { idle: 'generate', generating: 'generating', searching: 'searching', writing: 'writing' };
+
+  function setPhase(phase) { state.phase = phase; updateButton(); }
+
+  function updateButton() {
+    const busy = state.phase !== 'idle';
+    const label = t(PHASE_KEY[state.phase]);
+    $('#submit-label').textContent = label;
+    $('#spinner').hidden = !busy;
+    $('#submit').disabled = busy || !state.profile;
+    $('#submit').setAttribute('aria-busy', String(busy));
+    $('#sr-status').textContent = busy ? label : '';
+  }
+
+  /* ===================== Output rendering ===================== */
+  const escapeHtml = s => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  let renderQueued = false;
+
+  function queueRender() {
+    if (renderQueued) return;
+    renderQueued = true;
+    requestAnimationFrame(() => { renderQueued = false; renderMarkdown(); });
+  }
+
+  function renderMarkdown() {
+    const out = $('#md');
+    if (window.marked && window.DOMPurify) {
+      out.innerHTML = DOMPurify.sanitize(marked.parse(state.raw, { gfm: true }));
+    } else {
+      out.innerHTML = escapeHtml(state.raw).replace(/\n/g, '<br>'); // libraries blocked: plain-text fallback
+    }
+    $$('table', out).forEach(tb => {
+      const wrap = document.createElement('div');
+      wrap.className = 'my-4 overflow-x-auto';
+      tb.replaceWith(wrap);
+      wrap.appendChild(tb);
+    });
+    $$('a', out).forEach(a => { a.target = '_blank'; a.rel = 'noopener noreferrer'; });
+  }
+
+  function showOutput() {
+    $('#empty').hidden = true;
+    $('#md').hidden = false;
+    $('#copy').hidden = false;
+  }
+
+  function renderError() {
+    const box = $('#error');
+    if (!state.errorKey) { box.hidden = true; box.textContent = ''; return; }
+    box.textContent = t(state.errorKey);
+    box.hidden = false;
+  }
+
+  /* ===================== Generate (NDJSON stream) ===================== */
+  class ApiError extends Error { constructor(code) { super(code); this.code = code; } }
+  const ERR_KEY = { rate: 'errRate', config: 'errConfig', upstream: 'errUpstream', quota: 'errQuota', network: 'errNetwork', validation: 'errValidation' };
+  const codeFromStatus = s => (s === 429 ? 'rate' : s === 503 ? 'config' : s === 422 ? 'validation' : 'upstream');
+
+  function onEvent(ev) {
+    if (ev.t === 'status') {
+      setPhase(ev.v);
+    } else if (ev.t === 'delta') {
+      if (state.phase !== 'writing') setPhase('writing');
+      state.raw += ev.v;
+      showOutput();
+      queueRender();
+    } else if (ev.t === 'error') {
+      throw new ApiError(ev.v);
+    }
+  }
+
+  async function generate() {
+    if (state.phase !== 'idle') return;
+    const profile = readProfile();
+    state.profile = profile;
+    if (!profile) { renderTargets(); return; }
+
+    state.raw = '';
+    state.errorKey = null;
+    state.outputLang = state.lang;
+    const md = $('#md');
+    md.innerHTML = '';
+    md.hidden = true;
+    md.dir = state.lang === 'ar' ? 'rtl' : 'ltr';
+    md.lang = state.lang;
+    md.classList.add('streaming');
+    $('#copy').hidden = true;
+    $('#empty').hidden = false;
+    renderError();
+    setPhase('generating');
+
+    if (matchMedia('(max-width: 1023px)').matches) {
+      $('#output-card').scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+    }
+
+    const payload = { ...profile, language: state.lang, ingredients: $('#ingredients').value.trim() };
+
+    try {
+      const res = await fetch('/api/generate-meal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new ApiError(codeFromStatus(res.status));
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let nl;
+        while ((nl = buffer.indexOf('\n')) >= 0) {
+          const line = buffer.slice(0, nl).trim();
+          buffer = buffer.slice(nl + 1);
+          if (line) onEvent(JSON.parse(line));
+        }
+      }
+      if (!state.raw) throw new ApiError('upstream');
+    } catch (err) {
+      const code = err instanceof ApiError ? err.code : 'network';
+      state.errorKey = ERR_KEY[code] || 'errUpstream';
+    } finally {
+      md.classList.remove('streaming');
+      renderMarkdown();
+      renderError();
+      setPhase('idle');
+    }
+  }
+
+  /* ===================== Wiring ===================== */
+  $('#app-form').addEventListener('submit', e => { e.preventDefault(); generate(); });
+  $('#app-form').addEventListener('input', renderTargets);
+  $('#app-form').addEventListener('change', renderTargets);
+
+  $('#ingredients').addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); generate(); }
+  });
+
+  $$('[data-lang]').forEach(b => b.addEventListener('click', () => applyLang(b.dataset.lang)));
+
+  $('#copy').addEventListener('click', async () => {
+    const btn = $('#copy');
+    try {
+      await navigator.clipboard.writeText(state.raw);
+      btn.textContent = t('copied');
+      setTimeout(() => { btn.textContent = t('copy'); }, 1500);
+    } catch (_) { /* clipboard unavailable */ }
+  });
+
+  let initial = 'en';
+  try { initial = localStorage.getItem('lang') || ''; } catch (_) { /* ignore */ }
+  if (initial !== 'ar' && initial !== 'en') initial = (navigator.language || '').toLowerCase().startsWith('ar') ? 'ar' : 'en';
+  applyLang(initial);
+})();
+</script>
+</body>
+</html>
